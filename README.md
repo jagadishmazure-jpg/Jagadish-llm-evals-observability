@@ -1,5 +1,10 @@
 # Jagadish LLM Evals & Observability
 
+[![CI](https://github.com/jagadishmazure-jpg/Jagadish-llm-evals-observability/actions/workflows/ci.yml/badge.svg)](https://github.com/jagadishmazure-jpg/Jagadish-llm-evals-observability/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![Tests](https://img.shields.io/badge/tests-111%20passing-brightgreen)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
 LLM evaluation and observability **as code**: judges, regression suites,
 quality/cost/latency metrics, tracing, and trace analytics — all offline-first,
 no API keys required.
@@ -20,70 +25,64 @@ no API keys required.
 - **Analytics** (`observability/analytics/`): cost/latency aggregates per
   model and per agent, plus failure breakdowns by error type and span name.
 
+Methodology notes: [docs/metrics.md](docs/metrics.md).
+
 ## Quickstart
 
-```python
-from evals.judges import OfflineStubJudge, RubricCriterion, RubricJudge
-from evals.suites import RegressionSuite, load_dataset
-from evals.metrics import accuracy
-
-judge = OfflineStubJudge()
-cases = load_dataset("examples/demo.jsonl")
-
-def fake_model(case):
-    from evals.suites import ModelOutput
-    return ModelOutput(response="4", prompt_tokens=10, completion_tokens=2)
-
-suite = RegressionSuite(cases, fake_model, judges=[judge])
-result = suite.run()
-print(f"pass rate: {result.pass_rate:.2%}")
-print(f"accuracy:  {accuracy([r.judgment.score for r in result.results if r.judgment]):.2%}")
-```
-
-Tracing:
-
-```python
-from observability.tracing import Tracer, InMemoryExporter
-from observability.analytics import aggregate_by_model
-
-exporter = InMemoryExporter()
-tracer = Tracer(exporter)
-with tracer.start_span("agent.run", agent="researcher", model="demo-llm",
-                        prompt_tokens=120, completion_tokens=40):
-    with tracer.start_span("llm.call"):
-        ...
-
-for model, agg in aggregate_by_model(exporter.spans).items():
-    print(model, f"${agg.cost_usd:.4f}", f"p95={agg.latency.p95_ms:.1f}ms")
-```
-
-Swap `OfflineStubJudge` for a real LLM-backed judge in production; the
-interfaces are designed for that.
-
-## How to run tests
-
-Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/) (or plain pip):
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync --group dev
-uv run pytest
+uv run pytest -q
 ```
 
-Every test is offline — no network calls, no API keys.
+```python
+from evals.judges import OfflineStubJudge
+from evals.suites import RegressionSuite, load_dataset
 
-## Project layout
+suite = RegressionSuite(load_dataset("examples/demo.jsonl"),
+                        my_model_fn, judges=[OfflineStubJudge()])
+result = suite.run()
+print(f"pass rate: {result.pass_rate:.2%}")
+```
+
+Swap `OfflineStubJudge` for a real LLM-backed judge in production; the
+`Judge` interface is unchanged.
+
+## Project structure
 
 ```
 evals/
-  judges/      # Judge protocol, rubric, pairwise, offline stub
-  suites/      # dataset loader + regression suite runner
-  metrics/     # quality, cost, latency
+  judges/      Judge interface, rubric judge, pairwise judge, OfflineStubJudge
+  suites/      regression suites: datasets, model functions, SuiteResult
+  metrics/     accuracy, pass@k, token accounting, cost, latency stats
 observability/
-  tracing/     # spans, tracer context manager, exporters
-  analytics/   # per-model/per-agent aggregates, failure breakdown
-tests/         # 100+ offline pytest tests
-docs/          # metrics overview
+  tracing/     Span/Trace, Tracer context manager, in-memory exporter
+  analytics/   per-model/per-agent cost+latency aggregates, failure breakdowns
+examples/      runnable dataset (demo.jsonl)
+docs/          metrics.md
+tests/         111 offline pytest tests
 ```
+
+## Tests & CI
+
+**111 tests, all passing, fully offline.** GitHub Actions runs the suite on
+every push and pull request (Python 3.12, via `uv`). Releases ship to PyPI
+from version tags (`v*`) via trusted publishing — see
+`.github/workflows/release.yml` (add manually; workflow files can't be
+pushed via the GitHub API).
+
+## Portfolio
+
+Part of an agentic-AI engineering portfolio by
+[jagadishmazure-jpg](https://github.com/jagadishmazure-jpg):
+
+| Repo | What it is | Tests |
+|---|---|---|
+| [Jagadish-multi-agent-orchestration](https://github.com/jagadishmazure-jpg/Jagadish-multi-agent-orchestration) | Orchestration patterns as code | 124 |
+| [Jagadish-agent-security-redteam](https://github.com/jagadishmazure-jpg/Jagadish-agent-security-redteam) | Red-teaming suite: attack catalog, layered defenses, risk scoring | 206 |
+| **This repo** | LLM evals + observability as code | 111 |
+| [Jagadish-ingredion-agentic-ai](https://github.com/jagadishmazure-jpg/Jagadish-ingredion-agentic-ai) | End-to-end multi-agent platform (Microsoft Agent Framework 1.0) + live demo | 564 |
 
 ## License
 
