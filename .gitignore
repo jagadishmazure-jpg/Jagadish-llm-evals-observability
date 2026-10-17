@@ -29,3 +29,5 @@ htmlcov/
 .env
 .env.*
 !.env.example
+.ruff_cache/
+*.pdf

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from evals.judges.base import Judgment, Judge
+from evals.judges.base import Judge, Judgment
 from evals.judges.rubric import RubricCriterion
 
 _WORD_RE = re.compile(r"[a-z0-9]+")

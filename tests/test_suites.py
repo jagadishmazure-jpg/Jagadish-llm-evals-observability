@@ -157,7 +157,9 @@ def test_suite_aggregates_tokens():
 
 def test_suite_threshold_filters_scores():
     cases = [EvalCase("1", "q", "the cat sat on the mat")]
-    partial = lambda c: ModelOutput(response="the cat")  # coverage 0.4
+    def partial(c):
+        return ModelOutput(response="the cat")  # coverage 0.4
+
     strict = RegressionSuite(cases, partial, judges=[STUB], pass_threshold=0.9).run()
     lenient = RegressionSuite(cases, partial, judges=[STUB], pass_threshold=0.1).run()
     assert strict.failed == 1
