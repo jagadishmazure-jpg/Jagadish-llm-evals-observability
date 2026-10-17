@@ -1,8 +1,8 @@
 """LLM evaluation toolkit: judges, regression suites, and metrics."""
 
 from evals.judges import (
-    Judgment,
     Judge,
+    Judgment,
     OfflineStubJudge,
     PairwiseJudge,
     PairwiseResult,
