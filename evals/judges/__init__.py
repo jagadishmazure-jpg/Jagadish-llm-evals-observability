@@ -8,8 +8,10 @@ from evals.judges.bias import (
     PairDetail,
     position_swap_probe,
     verbosity_probe,
+    wilson_interval,
 )
 from evals.judges.pairwise import PairwiseJudge, PairwiseResult
+from evals.judges.probe_sets import POSITION_PAIRS, VERBOSITY_PAIRS
 from evals.judges.rubric import (
     CriterionScore,
     RubricCriterion,
@@ -34,4 +36,7 @@ __all__ = [
     "PairDetail",
     "position_swap_probe",
     "verbosity_probe",
+    "wilson_interval",
+    "POSITION_PAIRS",
+    "VERBOSITY_PAIRS",
 ]

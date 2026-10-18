@@ -15,6 +15,7 @@
 
 - Shows how to put an LLM feature under test: a dataset, a model function, judges, a pass threshold, and token and cost accounting.
 - Real run: a careful candidate passes 3/3 and a sloppy one 1/3 (one wrong answer, one timeout caught as a failure); a traced agent run shows tokens and cost per agent and the failing span.
+- Judge bias probes: position and verbosity, 40 pairs each, both orders judged, order-flip rate and 95% Wilson interval reported. The stub judge scores 0/40 on both (CI upper bound 0.09); rigged always-first and always-longer judges fail for the right reason.
 - Deterministic offline tests; CI with lint, CodeQL, gitleaks and documented-output drift checks.
 
 ## Purpose
@@ -32,6 +33,7 @@ flowchart LR
     DS["dataset<br/>JSONL / JSON"] --> RS["RegressionSuite"]
     MF["model_fn(case)"] --> RS
     J["Judges<br/>rubric, pairwise, stub"] --> RS
+    J --> BP["bias probes<br/>position, verbosity<br/>both orders, Wilson CI"]
     RS --> SR["SuiteResult<br/>pass rate, tokens, failures"]
     SR --> M["metrics<br/>accuracy, pass@k, cost, latency"]
     APP["agent code"] --> T["Tracer<br/>nested spans"] --> EX["InMemoryExporter"]
@@ -43,6 +45,14 @@ flowchart LR
 - **Judges** (`evals/judges/`): a `Judge` protocol; `RubricJudge` validates 1-5
   scores per weighted criterion; `PairwiseJudge` returns A, B or tie;
   `OfflineStubJudge` scores keyword coverage of the reference.
+- **Bias probes** (`evals/judges/bias.py`, `probe_sets.py`): every pair is judged
+  in both orders. Position bias is the same slot winning both times. A pair is
+  length-biased only if the longer answer wins in both orders, so slot
+  preference is never blamed on length. Equal-length pairs are left out of the
+  denominator. Each report gives the bias rate with a 95% Wilson interval and
+  the order-flip rate, and a judge passes only if both are at or below 0.10.
+  The 40-item probe sets are large enough that 0/40 has an upper bound (0.088)
+  under that threshold. Details: [docs/judge-bias.md](docs/judge-bias.md).
 - **Suites** (`evals/suites/`): load cases, run the model function, catch model
   exceptions as failures, apply judges at a threshold, and summarise.
 - **Metrics** (`evals/metrics/`): accuracy, unbiased pass@k, token totals, cost
@@ -55,10 +65,17 @@ flowchart LR
 ## Real code and output
 
 ```python
-"""Compare two candidate 'models' on the demo set, then trace a small agent run and analyse it."""
+"""Compare two candidate 'models' on the demo set, trace a small agent run, and probe a pairwise judge for bias."""
 from pathlib import Path
 
-from evals.judges import OfflineStubJudge
+from evals.judges import (
+    POSITION_PAIRS,
+    VERBOSITY_PAIRS,
+    OfflineStubJudge,
+    PairwiseJudge,
+    position_swap_probe,
+    verbosity_probe,
+)
 from evals.metrics.cost import TokenUsage, estimate_cost_usd
 from evals.metrics.quality import pass_at_k
 from evals.suites import RegressionSuite, load_dataset
@@ -112,6 +129,15 @@ for key, agg in sorted(aggregate_by_agent(exporter.spans, pricing=PRICING).items
 fb = failure_breakdown(exporter.spans)
 print(f"spans {fb.total_spans}, failed {fb.failed_spans} ({fb.failure_rate:.0%}), by error {fb.by_error_type}, "
       f"by span {fb.by_span_name}")
+
+# Bias probes: 40 pairs each, both orders judged, Wilson 95% CI.
+honest = PairwiseJudge(OfflineStubJudge().pairwise_prefer)
+slot_a = PairwiseJudge(lambda p, a, b, ref: "a")
+longer = PairwiseJudge(lambda p, a, b, ref: "a" if len(a) >= len(b) else "b")
+for label, judge in (("stub judge", honest), ("always-first judge", slot_a), ("always-longer judge", longer)):
+    print(f"{label}:")
+    print(f"  {position_swap_probe(judge, POSITION_PAIRS).summary()}")
+    print(f"  {verbosity_probe(judge, VERBOSITY_PAIRS).summary()}")
 ```
 
 Output of `python examples/demo.py` (real run, re-checked in CI):
@@ -126,6 +152,15 @@ pass@1 with 3 of 10 samples correct: 0.30; pass@5: 0.917
 agent planner    calls 1, tokens 380, est. cost $0.002700
 agent researcher calls 2, tokens 1050, est. cost $0.000675
 spans 3, failed 1 (33%), by error {'ConnectionError': 1}, by span {'tool.search': 1}
+stub judge:
+  position-swap: 0/40 biased (rate 0.00, 95% CI 0.00-0.09), order flips 0/40 (0.00), threshold 0.10 -> PASS
+  verbosity: 0/40 biased (rate 0.00, 95% CI 0.00-0.09), order flips 0/40 (0.00), threshold 0.10 -> PASS
+always-first judge:
+  position-swap: 40/40 biased (rate 1.00, 95% CI 0.91-1.00), order flips 40/40 (1.00), threshold 0.10 -> FAIL
+  verbosity: 0/40 biased (rate 0.00, 95% CI 0.00-0.09), order flips 40/40 (1.00), threshold 0.10 -> FAIL
+always-longer judge:
+  position-swap: 16/40 biased (rate 0.40, 95% CI 0.26-0.55), order flips 16/40 (0.40), threshold 0.10 -> FAIL
+  verbosity: 40/40 biased (rate 1.00, 95% CI 0.91-1.00), order flips 0/40 (0.00), threshold 0.10 -> FAIL
 ```
 <!-- /run -->
 
@@ -144,7 +179,7 @@ Test suite size (real collection, re-checked in CI):
 
 <!-- run: python scripts/count_tests.py -->
 ```text
-0 tests collected
+136 tests collected
 ```
 <!-- /run -->
 
@@ -153,12 +188,14 @@ Test suite size (real collection, re-checked in CI):
 - A model exception becomes a recorded failure; the suite never crashes mid-run.
 - Rubric scores outside 1-5 or of the wrong type raise instead of being averaged in.
 - Spans record errors automatically, so failures show up in analytics.
+- A pairwise judge must pass the position and verbosity probes (bias and order-flip rates both at most 0.10) before its verdicts are trusted.
 - Unknown models fall back to default pricing in analytics instead of crashing; pass an explicit table for billing.
 
 ## Limitations
 
 - The only built-in judge is a keyword-coverage stub; LLM judges are an interface, not an implementation.
 - Prices in the demo are illustrative, and the default table has a single placeholder rate.
+- The bias probes cover position and verbosity only. Self-preference and other judge biases are not probed. The probe items are short general-knowledge questions, so a real judge also needs probes in its own domain.
 - Per-agent cost is priced using the first span's model in each group.
 - Spans are kept in memory; no OpenTelemetry export yet.
 - No PyPI release; install from source.
@@ -168,6 +205,7 @@ Test suite size (real collection, re-checked in CI):
 | Capability | Status | Where |
 |---|---|---|
 | Judge protocol, rubric, pairwise, stub | Built | `evals/judges/` |
+| Judge bias probes (position, verbosity) with Wilson CI | Built | `evals/judges/bias.py` |
 | Regression suite runner | Built | `evals/suites/` |
 | Quality, token, cost and latency metrics | Built | `evals/metrics/` |
 | Tracer and in-memory exporter | Built | `observability/tracing/` |
@@ -195,6 +233,7 @@ run; it is a plan.
 ## Documentation
 
 - [Metrics methodology](docs/metrics.md)
+- [Judge bias probes](docs/judge-bias.md)
 - [Implementation guide (Azure)](docs/implementation-guide.md)
 - [Interview points](docs/interview-points.md)
 - [Security policy](SECURITY.md)
@@ -203,7 +242,7 @@ run; it is a plan.
 
 ```
 evals/
-  judges/      Judge protocol, rubric, pairwise, stub
+  judges/      Judge protocol, rubric, pairwise, stub, bias probes + probe sets
   suites/      datasets, runner, SuiteResult
   metrics/     quality, cost, latency
 observability/

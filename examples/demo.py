@@ -1,7 +1,14 @@
-"""Compare two candidate 'models' on the demo set, then trace a small agent run and analyse it."""
+"""Compare two candidate 'models' on the demo set, trace a small agent run, and probe a pairwise judge for bias."""
 from pathlib import Path
 
-from evals.judges import OfflineStubJudge
+from evals.judges import (
+    POSITION_PAIRS,
+    VERBOSITY_PAIRS,
+    OfflineStubJudge,
+    PairwiseJudge,
+    position_swap_probe,
+    verbosity_probe,
+)
 from evals.metrics.cost import TokenUsage, estimate_cost_usd
 from evals.metrics.quality import pass_at_k
 from evals.suites import RegressionSuite, load_dataset
@@ -55,3 +62,12 @@ for key, agg in sorted(aggregate_by_agent(exporter.spans, pricing=PRICING).items
 fb = failure_breakdown(exporter.spans)
 print(f"spans {fb.total_spans}, failed {fb.failed_spans} ({fb.failure_rate:.0%}), by error {fb.by_error_type}, "
       f"by span {fb.by_span_name}")
+
+# Bias probes: 40 pairs each, both orders judged, Wilson 95% CI.
+honest = PairwiseJudge(OfflineStubJudge().pairwise_prefer)
+slot_a = PairwiseJudge(lambda p, a, b, ref: "a")
+longer = PairwiseJudge(lambda p, a, b, ref: "a" if len(a) >= len(b) else "b")
+for label, judge in (("stub judge", honest), ("always-first judge", slot_a), ("always-longer judge", longer)):
+    print(f"{label}:")
+    print(f"  {position_swap_probe(judge, POSITION_PAIRS).summary()}")
+    print(f"  {verbosity_probe(judge, VERBOSITY_PAIRS).summary()}")

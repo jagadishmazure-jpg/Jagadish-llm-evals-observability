@@ -10,6 +10,7 @@ real run shown in the README.
 
 ## Likely follow-up questions
 
-- How do you trust an LLM judge? (Measure agreement with human labels and watch for position bias in pairwise.)
+- How do you trust an LLM judge? (Measure agreement with human labels, and run the position and verbosity probes here: both orders, a 40-pair set, a Wilson interval and the order-flip rate.)
+- Why judge both orders for verbosity? (With one order, slot preference looks like length preference. I only blame length when the longer answer wins both ways.)
 - What goes on a span? (Model, agent, tokens, error type; never raw PII.)
 - How big should a gold set be? (Start at 50 to 100 real cases and grow from failures.)
