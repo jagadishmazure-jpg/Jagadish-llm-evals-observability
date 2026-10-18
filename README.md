@@ -17,6 +17,7 @@
 - Real run: a careful candidate passes 3/3 and a sloppy one 1/3 (one wrong answer, one timeout caught as a failure); a traced agent run shows tokens and cost per agent and the failing span.
 - Judge bias probes: position and verbosity, 40 pairs each, both orders judged, order-flip rate and 95% Wilson interval reported. The stub judge scores 0/40 on both (CI upper bound 0.09); rigged always-first and always-longer judges fail for the right reason.
 - Deterministic offline tests; CI with lint, CodeQL, gitleaks and documented-output drift checks.
+- Agentic metrics: 7 deterministic trajectory/behavior metrics (DeepEval-style: task completion, step efficiency, plan quality, plan adherence, tool/tool-argument/answer correctness) plus a failure-analysis and before/after comparison loop. A fictional refund agent scores 7/7 on the clean case; the wasteful case fails plan quality at 0.75 until the duplicate tool call is removed (+0.25 measured delta).
 
 ## Purpose
 
@@ -57,6 +58,15 @@ flowchart LR
   exceptions as failures, apply judges at a threshold, and summarise.
 - **Metrics** (`evals/metrics/`): accuracy, unbiased pass@k, token totals, cost
   from a per-1M-token price table, latency mean, p50 and p95.
+- **Agentic metrics** (`evals/trajectory.py`, `evals/behavior.py`): 7
+  deterministic scores for how the agent worked — task completion, step
+  efficiency, plan quality, plan adherence, tool correctness, argument
+  correctness, answer correctness (logical conclusion, not exact match).
+  Each takes a threshold and returns pass/fail with a human-readable
+  reason. Methodology: [docs/agentic-metrics.md](docs/agentic-metrics.md).
+- **Improvement loop** (`evals/improvement.py`): `FailureAnalysis` groups
+  failures into ranked patterns; `ComparisonReport` renders the
+  before/after delta table as Markdown.
 - **Tracing** (`observability/tracing/`): `Tracer.start_span` context manager with
   parent links and automatic error capture.
 - **Analytics** (`observability/analytics/`): cost and latency per model or agent,
@@ -164,6 +174,48 @@ always-longer judge:
 ```
 <!-- /run -->
 
+## Agentic metrics demo
+
+`examples/agentic_metrics_demo.py` scores a fictional refund agent on all 7
+agentic metrics, then closes the improvement loop (real run, re-checked in CI):
+
+<!-- run: python examples/agentic_metrics_demo.py -->
+```text
+case refund-ok: 7/7 metrics passed
+  task_completion      1.00 PASS all 1 expected claims covered in the final answer
+  step_efficiency      1.00 PASS all 3 tool calls were necessary
+  plan_quality         1.00 PASS effective sequence: 3 calls, info before action, no re-fetches, nothing after the terminal action
+  plan_adherence       1.00 PASS followed 3/3 planned steps
+  tool_correctness     1.00 PASS F1 1.00 (precision 1.00, recall 1.00)
+  argument_correctness 1.00 PASS all arguments matched across 3 tools
+  answer_correctness   1.00 PASS conclusion matches: all 1 expected claims present
+case refund-expired: 6/7 metrics passed
+  task_completion      1.00 PASS all 1 expected claims covered in the final answer
+  step_efficiency      1.00 PASS all 3 tool calls were necessary
+  plan_quality         0.75 FAIL score 0.75; redundant re-fetch: 'get_today' called again with identical arguments
+  plan_adherence       1.00 PASS followed 2/2 planned steps
+  tool_correctness     1.00 PASS F1 1.00 (precision 1.00, recall 1.00)
+  argument_correctness 1.00 PASS all arguments matched across 2 tools
+  answer_correctness   1.00 PASS conclusion matches: all 1 expected claims present
+
+top failure pattern: plan_quality failed 1x (refund-expired): score #; redundant re-fetch: {} called again with identical arguments
+  e.g. score 0.75; redundant re-fetch: 'get_today' called again with identical arguments
+
+before/after comparison (duplicate get_today removed):
+| metric | before (mean) | after (mean) | delta | before pass rate | after pass rate |
+|---|---|---|---|---|---|
+| answer_correctness | 1.00 | 1.00 | +0.00 | 100% | 100% |
+| argument_correctness | 1.00 | 1.00 | +0.00 | 100% | 100% |
+| plan_adherence | 1.00 | 1.00 | +0.00 | 100% | 100% |
+| plan_quality | 0.75 | 1.00 | +0.25 | 0% | 100% |
+| step_efficiency | 1.00 | 1.00 | +0.00 | 100% | 100% |
+| task_completion | 1.00 | 1.00 | +0.00 | 100% | 100% |
+| tool_correctness | 1.00 | 1.00 | +0.00 | 100% | 100% |
+
+Summary: 1 metric(s) improved, 0 regressed, 6 unchanged or n/a.
+```
+<!-- /run -->
+
 ## How to run
 
 ```bash
@@ -179,7 +231,7 @@ Test suite size (real collection, re-checked in CI):
 
 <!-- run: python scripts/count_tests.py -->
 ```text
-136 tests collected
+198 tests collected
 ```
 <!-- /run -->
 
@@ -208,6 +260,8 @@ Test suite size (real collection, re-checked in CI):
 | Judge bias probes (position, verbosity) with Wilson CI | Built | `evals/judges/bias.py` |
 | Regression suite runner | Built | `evals/suites/` |
 | Quality, token, cost and latency metrics | Built | `evals/metrics/` |
+| 7 deterministic agentic metrics (trajectory + behavior) | Built | `evals/trajectory.py`, `evals/behavior.py` |
+| Failure analysis + before/after comparison loop | Built | `evals/improvement.py` |
 | Tracer and in-memory exporter | Built | `observability/tracing/` |
 | Cost, latency and failure analytics | Built | `observability/analytics/` |
 | LLM-backed judge | Planned | docs/implementation-guide.md |
@@ -233,6 +287,7 @@ run; it is a plan.
 ## Documentation
 
 - [Metrics methodology](docs/metrics.md)
+- [Agentic metrics (trajectory, behavior, improvement loop)](docs/agentic-metrics.md)
 - [Judge bias probes](docs/judge-bias.md)
 - [Implementation guide (Azure)](docs/implementation-guide.md)
 - [Interview points](docs/interview-points.md)
@@ -245,11 +300,15 @@ evals/
   judges/      Judge protocol, rubric, pairwise, stub, bias probes + probe sets
   suites/      datasets, runner, SuiteResult
   metrics/     quality, cost, latency
+  trajectory.py  4 deterministic trajectory metrics (DeepEval-style)
+  behavior.py    3 deterministic behavior metrics + BehaviorCase
+  improvement.py failure analysis + before/after comparison reports
 observability/
   tracing/     Span, Tracer, exporters
   analytics/   aggregates, failure breakdown
 examples/      demo.jsonl + demo.py (the run shown above)
-docs/          metrics.md
+               agentic_metrics_demo.py (7-metric refund-agent run)
+docs/          metrics.md, agentic-metrics.md
 tests/         offline pytest suite
 ```
 
