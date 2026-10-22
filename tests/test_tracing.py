@@ -67,12 +67,16 @@ def test_tracer_exports_finished_spans():
     assert exporter.spans[0].status is SpanStatus.OK
 
 
+def _raise_bad():
+    raise ValueError("bad")
+
+
 def test_tracer_captures_exceptions():
     exporter = InMemoryExporter()
     tracer = Tracer(exporter)
     with pytest.raises(ValueError, match="bad"):
         with tracer.start_span("risky"):
-            raise ValueError("bad")
+            _raise_bad()
     span = exporter.spans[0]
     assert span.status is SpanStatus.ERROR
     assert span.error_type == "ValueError"
