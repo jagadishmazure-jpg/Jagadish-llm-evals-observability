@@ -274,6 +274,16 @@ The step-by-step path from this offline build to an Azure deployment is in
 [docs/implementation-guide.md](docs/implementation-guide.md). None of it has been
 run; it is a plan.
 
+## How the three evaluation / observability repos differ
+
+| Repo | Question it answers | When it runs | Input | Output |
+| --- | --- | --- | --- | --- |
+| [Jagadish-llm-evals-observability](https://github.com/jagadishmazure-jpg/Jagadish-llm-evals-observability) | *Is the model/agent output good?* A reusable metrics library: RAG and trajectory metrics, LLM-as-judge with bias probes, Wilson intervals | Offline, in CI | Recorded runs and golden sets | Scores and regression gates |
+| [Jagadish-agent-eval-studio](https://github.com/jagadishmazure-jpg/Jagadish-agent-eval-studio) | *Does this one agent get better when we change it?* An end-to-end worked project: a refund agent, 7 metrics, behaviour cases, guarded vs unguarded runs, a measured v1 → v2 loop | Offline, per change | One agent plus its eval cases | Before/after comparison of one agent |
+| [Jagadish-agent-trace-observability](https://github.com/jagadishmazure-jpg/Jagadish-agent-trace-observability) | *What happened in production, and what did it cost?* Span trees, PII-redacted traces, cost per successful request, latency, budget caps, loop detection, failures mined into new eval cases | Online, on live traffic | Execution traces | Dashboards, budget decisions, new eval cases for the other two |
+
+They connect: trace-observability turns production failures into eval cases, llm-evals-observability scores them, and eval-studio shows the full improve-and-remeasure loop on one agent.
+
 ## Related repositories
 
 | Repo | How it relates |
