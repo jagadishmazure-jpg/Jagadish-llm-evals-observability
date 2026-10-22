@@ -11,7 +11,7 @@ class Exporter(Protocol):
     """Receives finished spans."""
 
     def export(self, span: Span) -> None:
-        ...
+        """Handle one finished span."""
 
 
 class InMemoryExporter:

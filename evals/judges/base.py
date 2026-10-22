@@ -32,4 +32,3 @@ class Judge(Protocol):
         Returns a :class:`Judgment`. Implementations must be deterministic
         for identical inputs unless documented otherwise.
         """
-        ...
