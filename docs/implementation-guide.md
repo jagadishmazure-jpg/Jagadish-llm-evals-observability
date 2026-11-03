@@ -9,7 +9,7 @@
 | Offline component | Azure service (planned) | Notes |
 |---|---|---|
 | LLM judge | Azure OpenAI model behind the `Judge` protocol | Calibrate on human labels |
-| Suites | Azure AI Foundry evaluations, or a CI job on every prompt/model change |  |
+| Suites | Microsoft Foundry evaluations, or a CI job on every prompt/model change |  |
 | Tracing | OpenTelemetry to Application Insights | Keep span attribute names |
 | Analytics | Log Analytics / KQL workbooks over spans |  |
 | Pricing | Azure retail prices for the deployed models |  |
